@@ -1,8 +1,8 @@
 # Data Engineer test - TheirStack, 2025
 
-The goal of this test is to build an entity resolution system for a table with company data. 
-In the table, companies may appear multiple times, with information coming from multiple sources.
-There is not a common key to identify the same company across the different sources, but there are common attributes that can be used to identify the same company.
+The goal of this test is to build an entity resolution system for a table with company data.   
+In the table, companies may appear multiple times, with information coming from multiple sources.  
+There is not a common key to identify the same company across the different sources, but there are common attributes that can be used to identify the same company.  
 For example, there may be 5 records about the same company, with:
 - different names
 - some records may have domain information
@@ -38,7 +38,7 @@ ORDER BY (name)
 ```
 
 ## Output
-Build an entity resolution system that will be able to merge records from multiple records from the company_landing table into a single record.
+Build an entity resolution system that will be able to merge records from multiple records from the company_landing table into a single record.  
 This is the proposed schema for the output table:
 ```sql
 CREATE TABLE company_final
@@ -70,19 +70,16 @@ Add a README.md file explaining
 We'll value very possitively things like:
 
 1. Maintainability: how easy is it to build on, maintain and extend the solution? If we add company data from a new source, how easy is it to add it to the solution?
-2. Performance: The test data is just 50k records. Our production DB includes data about 5M companies. And there are probably ~50M companies in the world we want to be in our database at some point. How does your solution work with 10x more data? 1000x more data? Have you tested the performance of your solution?
+2. Performance: The test data is just 50k records. Our production DB includes data about 5M companies. And there are probably ~50M companies in the world we want to be in our database at some point. How does your solution work with 10x more data? 1000x more data? Have you tested the performance of your solution, and how?
 3. Reproducibility: the easier it is to reproduce, debug and understand the solution and its intermediate steps, the better.
 4. Simplicity: if you can solve 100% or 90% of the problem with a single tool, that's better than building a system with a lot of moving pieces. We made the change to ClickHouse recently and want to keep building as much as possible in it. Systems with just a few moving pieces are easier to maintain and extend, and let us keep being a small, lean team.
 
+(and everything else [from here](https://javisantana.com/fastdata/data-engineer-skills.html) 🐐)
 
 ### Should I use ClickHouse?
-Yes, solve as much as you can of the test in ClickHouse.
-
-### Can I use AI/ML?
-Yes.
+Yes, solve as much as you can of the test in ClickHouse.  
 
 ### Useful links
-
 These may be useful depending on the approach you take:
 
 - [Finding connected components of a graph in ClickHouse](https://fiddle.clickhouse.com/b66efe27-439f-4315-878b-ee190b41cd7c) and [in Python](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.components.connected_components.html)
