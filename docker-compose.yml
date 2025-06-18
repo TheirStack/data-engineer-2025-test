@@ -6,9 +6,9 @@ services:
       CLICKHOUSE_DB: mydb
       CLICKHOUSE_USER: default
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-      CLICKHOUSE_PASSWORD: clickhouse_password
+      CLICKHOUSE_PASSWORD: 
     volumes:
-      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-data-ts-test:/var/lib/clickhouse
       - ./data:/data
       - ./db/sql:/sql
     ports:
@@ -24,8 +24,8 @@ services:
       - app-network
 
 volumes:
-  clickhouse-data:
-    name: clickhouse-data
+  clickhouse-data-ts-test:
+    name: clickhouse-data-ts-test
 
 networks:
   app-network:
