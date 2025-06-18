@@ -5,7 +5,7 @@ This is the test for the [Data Engineer (up to 80k€)](https://theirstack.notio
 The goal of this test is to build an **entity resolution system** for a table with **company data**.   
 In the table, companies may appear multiple times, with information coming from multiple sources, and the same company may have multiple names.  
 Also, multiple companies may have the same name.  
-Jump to the [some particularities about the data](#some-particularities-about-the-data) part to learn more.
+Jump to the ["some considerations about the data"](#some-considerations-about-the-data) part to learn more.
 
 
 ## Input
