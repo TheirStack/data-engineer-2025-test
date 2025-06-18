@@ -1,6 +1,6 @@
-# Data Engineer test - TheirStack, 2025
+# Senior Data Engineer test - TheirStack, 2025
 
-This is the test for the [Data Engineer (up to 80k€)](https://theirstack.notion.site/Data-Engineer-at-TheirStack-com-1d0885e5e97b8085b4f0c9d22733464b) position at [TheirStack](https://theirstack.com).  
+This is the test for the [Senior Data Engineer (up to 80k€)](https://theirstack.notion.site/Data-Engineer-at-TheirStack-com-1d0885e5e97b8085b4f0c9d22733464b) position at [TheirStack](https://theirstack.com).  
 
 The goal of this test is to build an **entity resolution system** for a table with **company data**.   
 In the table, companies may appear multiple times, with information coming from multiple sources, and the same company may have multiple names.  
@@ -9,7 +9,7 @@ Jump to the ["some considerations about the data"](#some-considerations-about-th
 
 
 ## Input
-This repo contains a Docker compose file to run a ClickHouse database. Run `docker compose up -d` to run it. Connect to it running `make ch`.
+This repo contains a Docker Compose file to run a ClickHouse database. Run `docker compose up -d` to run it. Connect to it running `make ch`.
 
 The data to populate it is at https://media.theirstack.com/ts-data-engineer-test-2025/company_landing.csv
 
