@@ -140,6 +140,8 @@ A path that we see promising is dividing the problem into smaller steps, such as
 
 Don't invest more than 4-5 hours into this test. We're aware many things will be missing and can be improved, and even if you don't finish it, we'll value your thought process and how you think of next steps, handling edge cases, etc.
 
+This may look like a classic ML classification problem, but it's not because we don't have a pre-defined master list of companies - that has to be built from the data. And if more companies appear in the `company_landing` table, some of those will be new, so classifying them according to the set of companies we had before will fail to classify new companies correctly.
+
 It is **not** necessary to extract information from the `info` JSON column such as employee count, industry, etc. - that's out of the scope of this test. But you can also use it if you want more attributes to find common patterns between companies.
 
 Complete this README.md file explaining:
