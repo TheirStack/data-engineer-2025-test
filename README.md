@@ -17,20 +17,26 @@ The table where all the company into is has this schema:
 ```sql
 CREATE TABLE company_landing
 (
-    data_provider_origin_id UInt32,
-    data_provider_company_id String,
-    name String,
-    domain Nullable(String),
-    linkedin_slug Nullable(String),
-    info String, -- JSON stored as String in ClickHouse
-    created_at DateTime64(3) DEFAULT now(),
-    updated_at DateTime64(3) DEFAULT now(),
-    host Nullable(String),
-    url Nullable(String)
+    data_provider_origin_id UInt32 COMMENT 'The ID of the data provider where this company information was pulled from (1, 2, 3...)',
+    data_provider_company_id String COMMENT 'The ID of the company in the data provider (such as "99e969521edc4d32", "firmenich", "Canva", ...). This is the ID that uniquely identifies the company in the data provider. For some data providers where we were unable to find a unique ID, we used the company name instead.',
+    name String COMMENT 'The name of the company',
+    domain Nullable(String) COMMENT 'The domain of the URL of the company (e.g. "google.com")',
+    linkedin_slug Nullable(String) COMMENT 'The LinkedIn slug of the company (e.g. "google")',
+    info String COMMENT 'JSON stored as String in ClickHouse, contains information about the company such as the industry, employee count, etc. The format of this column is different for each data provider.',
+    created_at DateTime64(3) DEFAULT now() COMMENT 'The date and time the record was created',
+    updated_at DateTime64(3) DEFAULT now() COMMENT 'The date and time the record was updated',
+    host Nullable(String) COMMENT 'The full hostname of the URL of the company (e.g. "careers.google.com")',
+    url Nullable(String) COMMENT 'The full URL of the company (e.g. "https://careers.google.com")'
 )
 ENGINE = ReplacingMergeTree()
 ORDER BY (data_provider_origin_id, data_provider_company_id)
 ```
+
+The combination of `data_provider_origin_id` and `data_provider_company_id` is unique, no two rows with the same value of these two columns exists in the `company_landing` table.  
+
+In some cases, the `domain` field can uniquely identify a company. However, this is not always reliable. For example, when the URL comes from an ATS (Applicant Tracking System) provider, each company may have a different subdomain (e.g., `bluserena.zohorecruit.eu`), but the `domain` (`zohorecruit.eu`) is shared by many unrelated companies.
+
+In all cases, we provide the `host` field, which is the full hostname of the URL of the company (e.g. "careers.google.com"). This field can be used to uniquely identify a company. But if you only use the host to find groups, you wouldn't be able to match `jobs.google.com` with `careers.google.com` or with `google.com`, so additional logic may be necessary there in a production solution.
 
 We provide a dataset with 5k records, another one with 50k records and another one with 500k records. You can populate the table with any of them with any of these commands:
 
@@ -56,8 +62,6 @@ For example, there may be 5 records about the same company, and:
 - they all have different company names
 - some records may have domain and host information
 - some records may have the LinkedIn slug or URL of the company
-- some records may have the company industry
-- some records may have the same or similar company logos
 
 
 The company name alone is not enough to identify the same company across the different sources. Using the company name alone, we may end up merging information from different companies that have the same name. And we'd fail to merge multiple records with different names that refer to the same company.  
@@ -66,26 +70,75 @@ Your job is to use common attributes to build these "clusters" of rows from the 
 
 ![connected components](img/connected%20components.gif)
 
+Also, note that:
+- within the same data provider, the same company may have different values for `data_provider_company_id`
+- within the same data provider, the same company may have different values for `name`
+- within the same data provider, the same company may have different values for `domain`
+- within the same data provider, the same company may have different values for `host`
+- within the same data provider, the same company may have different values for `url`
+
+You don't need to cover all these edge cases, but you should be aware of them.
+
+Also, there may be cases where all of domain, host and linkedin_slug are null for a company where other records have a value for one of those fields. In those cases, treat it as a different company because if the only field in common is the name we may end up merging information from other different companies that have the same name.
+
 
 ## Output
 Build an entity resolution system that will be able to merge records from multiple records from the company_landing table into a single record.  
 
-You can create as many intermediate tables and migartions on the original table as you need.
+You can create as many intermediate tables and migrationsmigartions on the original table as you need.
 
 This is the proposed schema for the output table:
 ```sql
 CREATE TABLE company_final
 (
-    name String,
-    possible_names Array(String),
-    domain Nullable(String),
-    possible_domains Array(Nullable(String)),
-    linkedin_slug Nullable(String),
-    possible_hostnames Array(Nullable(String)),
-    ... (info here extracted from the `info` JSON column)
+   name String, -- choose one
+   data_providers_and_company_ids Array(Tuple(UInt32, String)) COMMENT 'The combinations of data_provider_origin_id and data_provider_company_id that belong to the same company, e.g. [(1, "99e969521edc4d32"), (2, "google")]',
+   possible_names Array(String) COMMENT 'The unique possible names of the company, e.g. "Google", "YouTube", "Alphabet"',
+   possible_domains Array(Nullable(String)) COMMENT 'The unique possible domains of the company, e.g. "google.com", "youtube.com"',
+   linkedin_slug Nullable(String) COMMENT 'The LinkedIn slug of the company, e.g. "google"',
+   possible_hostnames Array(Nullable(String)) COMMENT 'The unique possible hostnames of the company, e.g. "careers.google.com", "google.com", "careers.youtube.com"'
+   -- more columns could be added here to extract details about each company, but this is out of the scope of this test
 ) ENGINE = MergeTree()
 ORDER BY (name)
 ```
+
+### Examples
+
+For an input like this:
+| data\_provider\_origin\_id | data\_provider\_company\_id | name | domain | linkedin\_slug | host | url |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | 5f2987132c142600daf44da0 | Amazon Web Services \(AWS\) | null | amazon-web-services | null | null |
+| 3 | amazon-web-services | Amazon Web Services \(AWS\) | amazon.com | amazon-web-services | aws.amazon.com | http://aws.amazon.com |
+| 2 | 1a7417cbcd7e0e0d | American Airlines | aa.com | null | aa.com | http://jobs.aa.com |
+| 1 | 5da65de01eafc200013d00e0 | American Airlines | aa.com | american-airlines | aa.com | http://www.aa.com |
+| 3 | american-airlines | American Airlines | aa.com | american-airlines | aa.com | http://jobs.aa.com |
+
+
+Your process should be able to identify that those 5 records belong only to 2 different companies, AWS and American Airlines, and return the combinations of `data_provider_origin_id` and `data_provider_company_id` that belong to the same company, e.g. `[(1, "5f2987132c142600daf44da0"), (2, "1a7417cbcd7e0e0d"), (3, "american-airlines")]`.
+
+Producing a result like this:  
+
+| name | data_providers_and_company_ids | possible_names | possible_domains | linkedin_slug | possible_hostnames |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Amazon Web Services \(AWS\) | [(1, "5f2987132c142600daf44da0"), (3, "amazon-web-services")] | ["Amazon Web Services \(AWS\)"] | ["amazon.com"] | "amazon-web-services" | ["aws.amazon.com"] |
+| American Airlines | [(2, "1a7417cbcd7e0e0d"), (1, "5da65de01eafc200013d00e0"), (3, "american-airlines")] | ["American Airlines"] | ["aa.com"] | "american-airlines" | ["aa.com", "jobs.aa.com"] |
+
+### A possible approach
+
+A path that we see promising is dividing the problem into smaller steps, such as:
+1. Grouping by certain attributes to produce intermediate tables:
+   1. one grouping by domain
+   2. one grouping by linkedin_slug
+   3. one grouping by host (sometimes the domain will be too broad and other times the host will be too specific, more logic may be necessary there)
+2. In those intermediate tables, store the combinations of `data_provider_origin_id` and `data_provider_company_id` that belong to the same company that have that attribute in common (domain, linkedin_slug...)
+3. Treating companies as node of a graph, and the fact that they belong to some of those intermediate tables as edges, we can find the connected components of the graph, which are the clusters of companies that belong to the same company.
+4. For each connected component, we can extract the possible names, domains, hostnames, etc. of the companies that belong to it.
+5. We can then merge the information from the intermediate tables into the final table.
+
+
+### About this test
+
+Don't invest more than 4-5 hours into this test. We're aware many things will be missing and can be improved, and even if you don't finish it, we'll value your thought process and how you think of next steps, handling edge cases, etc.
 
 It is **not** necessary to extract information from the `info` JSON column such as employee count, industry, etc. - that's out of the scope of this test. But you can also use it if you want more attributes to find common patterns between companies.
 
@@ -122,7 +175,8 @@ These are things that we will value positively in your solution:
    2. If you made migrations to the original table, or added new tables, you ran them in a way that is easy to reproduce and understand, rather than as one-off commands on the terminal.
 
 ### Should I use ClickHouse?
-Yes, solve as much as you can of the test in ClickHouse. We're betting on ClickHouse and on solving as much with it as possible. Systems with just a few moving pieces are easier to maintain and extend, and let us keep being a small, lean team.
+We have recently migrated to ClickHouse, and we're betting hard that many parts of our data processing stack will run on it, so if you join us you'd be using it every day.  
+But if you feel more comfortable with another tool, you can use it if it'll allow you to solve the test faster.
 
 ### Useful links
 These may be useful depending on the approach you take:
