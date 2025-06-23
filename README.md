@@ -8,16 +8,10 @@ Also, multiple companies may have the same name.
 
 Complete the `solution.md` file with your approach to the problem and responses to the sections in it.
 
-## The problem
-Build an entity resolution system that will be able to merge records from multiple records from the company_landing table into a single record.  
-
-You can create as many intermediate tables and migrations on the original table as you need.
-
-
 ### Input
 This repo contains a Docker Compose file to run a ClickHouse database. Run `docker compose up -d` to run it. Connect to it running `make ch`.
 
-The table where all the company into is has this schema:
+The table where all the company information is stored has this schema:
 ```sql
 CREATE TABLE company_landing
 (
@@ -86,7 +80,9 @@ The solution should be **explainable** - it should be easy to understand why two
 The solution should have **no false positives**. False positives (wrongly merging two companies that are different) are **much worse** than false negatives (not merging two companies that are the same because we don't have enough information to do it).   
 
 
-Don't invest more than 4-5 hours into this test. We're aware many things will be missing and can be improved, and even if you don't finish it, we'll value your thought process and how you think of next steps, handling edge cases, etc.
+Don't invest more than 4-5 hours into this test. We're aware many things will be missing and can be improved, and even if you don't finish it, we'll value your thought process and how you think of next steps, handling edge cases, etc.  
+You can create as many intermediate tables and migrations on the original table as you need.
+
 
 ## Constraints
 
