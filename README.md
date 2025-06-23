@@ -5,13 +5,17 @@ This is the test for the [Senior Data Engineer (up to 80k€)](https://theirstac
 The goal of this test is to build an **entity resolution system** for a table with **company data**.   
 In the table, companies may appear multiple times, with information coming from multiple sources, and the same company may have multiple names.  
 Also, multiple companies may have the same name.  
-Jump to the ["some considerations about the data"](#some-considerations-about-the-data) part to learn more.
+
+Complete the `solution.md` file with your approach to the problem and responses to the sections in it.
+
+## The problem
+Build an entity resolution system that will be able to merge records from multiple records from the company_landing table into a single record.  
+
+You can create as many intermediate tables and migrations on the original table as you need.
 
 
-## Input
+### Input
 This repo contains a Docker Compose file to run a ClickHouse database. Run `docker compose up -d` to run it. Connect to it running `make ch`.
-
-The data to populate it is at https://media.theirstack.com/ts-data-engineer-test-2025/company_landing.csv
 
 The table where all the company into is has this schema:
 ```sql
@@ -54,6 +58,70 @@ INSERT INTO company_landing
 SELECT * FROM s3('https://media.theirstack.com/ts-data-engineer-test-2025/company_landing_500k.csv', 'CSV');
 ```
 
+This is the proposed schema for the output table:
+```sql
+CREATE TABLE company_final
+(
+   name String, -- choose one
+   data_providers_and_company_ids Array(Tuple(UInt32, String)) COMMENT 'The combinations of data_provider_origin_id and data_provider_company_id that belong to the same company, e.g. [(1, "99e969521edc4d32"), (2, "google")]',
+   possible_names Array(String) COMMENT 'The unique possible names of the company, e.g. "Google", "YouTube", "Alphabet"',
+   possible_domains Array(Nullable(String)) COMMENT 'The unique possible domains of the company, e.g. "google.com", "youtube.com"',
+   linkedin_slug Nullable(String) COMMENT 'The LinkedIn slug of the company, e.g. "google"',
+   possible_hostnames Array(Nullable(String)) COMMENT 'The unique possible hostnames of the company, e.g. "careers.google.com", "google.com", "careers.youtube.com"'
+   -- more columns could be added here to extract details about each company, but this is out of the scope of this test
+) ENGINE = MergeTree()
+ORDER BY (name)
+```
+
+## The solution
+
+This is **not** a typical ML classification problem because:
+- There is no pre-defined master list of companies - it has to be built from the data.
+- If more companies appear in the `company_landing` table, some of those will be new, so classifying them according to the set of companies we had before will fail to classify new companies correctly.
+
+It is **not** necessary to extract information from the `info` JSON column such as employee count, industry, etc. - that's out of the scope of this test. But you can also use it if you want more attributes to find common patterns between companies.
+
+The solution should be **deterministic** - the same input should always produce the same output.  
+The solution should be **explainable** - it should be easy to understand why two companies were merged into one.  
+The solution should have **no false positives**. False positives (wrongly merging two companies that are different) are **much worse** than false negatives (not merging two companies that are the same because we don't have enough information to do it).   
+
+
+Don't invest more than 4-5 hours into this test. We're aware many things will be missing and can be improved, and even if you don't finish it, we'll value your thought process and how you think of next steps, handling edge cases, etc.
+
+## Constraints
+
+deterministic, not fuzzy matching
+explainable
+false positives must be 0.
+
+
+
+### Examples
+
+For an input like this:
+| data\_provider\_origin\_id | data\_provider\_company\_id | name | domain | linkedin\_slug | host | url |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | 5f2987132c142600daf44da0 | Amazon Web Services (AWS) | null | amazon-web-services | null | null |
+| 3 | amazon-web-services | Amazon Web Services (AWS) | amazon.com | amazon-web-services | aws.amazon.com | http://aws.amazon.com |
+| 2 | 1a7417cbcd7e0e0d | American Airlines | aa.com | null | aa.com | http://jobs.aa.com |
+| 1 | 5da65de01eafc200013d00e0 | American Airlines | aa.com | american-airlines | aa.com | http://www.aa.com |
+| 2 | as7417cbcd7e0edf | American Airlines | null | null | null | null |
+| 3 | american-airlines | American Airlines | aa.com | american-airlines | aa.com | http://jobs.aa.com |
+
+Your process should be able to identify that those 6 records belong to 3 different companies: AWS, American Airlines (with enough info to merge), and a separate American Airlines (with only the name). The last one should not be merged with the others, because company name alone is not enough to confidently merge records.
+
+Producing a result like this:  
+
+| name | data_providers_and_company_ids | possible_names | possible_domains | linkedin_slug | possible_hostnames |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Amazon Web Services (AWS) | [(1, "5f2987132c142600daf44da0"), (3, "amazon-web-services")] | ["Amazon Web Services (AWS)"] | ["amazon.com"] | "amazon-web-services" | ["aws.amazon.com"] |
+| American Airlines | [(2, "1a7417cbcd7e0e0d"), (1, "5da65de01eafc200013d00e0"), (3, "american-airlines")] | ["American Airlines"] | ["aa.com"] | "american-airlines" | ["aa.com", "jobs.aa.com"] |
+| American Airlines | [(4, "as7417cbcd7e0edf")] | ["American Airlines"] | [null] | null | [null] |
+
+**Note:**
+The last "American Airlines" record (with `data_provider_origin_id = 4` and `data_provider_company_id = as7417cbcd7e0edf`) is not merged with the other American Airlines records. This is because it only shares the company name, and the rules specify that company name alone is not sufficient to merge records—this avoids false positives.
+
+
 ### Some considerations about the data
 There is not a common key to identify the same company across the different sources, but there are common attributes that can be used to identify the same company.  
 
@@ -62,9 +130,10 @@ For example, there may be 5 records about the same company, and:
 - they all have different company names
 - some records may have domain and host information
 - some records may have the LinkedIn slug or URL of the company
+- some records may only have the company name. In this case, you should treat it as a different company.
 
 
-The company name alone is not enough to identify the same company across the different sources. Using the company name alone, we may end up merging information from different companies that have the same name. And we'd fail to merge multiple records with different names that refer to the same company.  
+The **company name alone is not enough** to identify the same company across the different sources. Using the company name alone, we may end up merging information from different companies that have the same name. And we'd fail to merge multiple records with different names that refer to the same company.  
 
 Your job is to use common attributes to build these "clusters" of rows from the `company_landing` table that belong to the same company, as if they were the connected components of an undirected graph.
 
@@ -82,46 +151,6 @@ You don't need to cover all these edge cases, but you should be aware of them.
 Also, there may be cases where all of domain, host and linkedin_slug are null for a company where other records have a value for one of those fields. In those cases, treat it as a different company because if the only field in common is the name we may end up merging information from other different companies that have the same name.
 
 
-## Output
-Build an entity resolution system that will be able to merge records from multiple records from the company_landing table into a single record.  
-
-You can create as many intermediate tables and migrationsmigartions on the original table as you need.
-
-This is the proposed schema for the output table:
-```sql
-CREATE TABLE company_final
-(
-   name String, -- choose one
-   data_providers_and_company_ids Array(Tuple(UInt32, String)) COMMENT 'The combinations of data_provider_origin_id and data_provider_company_id that belong to the same company, e.g. [(1, "99e969521edc4d32"), (2, "google")]',
-   possible_names Array(String) COMMENT 'The unique possible names of the company, e.g. "Google", "YouTube", "Alphabet"',
-   possible_domains Array(Nullable(String)) COMMENT 'The unique possible domains of the company, e.g. "google.com", "youtube.com"',
-   linkedin_slug Nullable(String) COMMENT 'The LinkedIn slug of the company, e.g. "google"',
-   possible_hostnames Array(Nullable(String)) COMMENT 'The unique possible hostnames of the company, e.g. "careers.google.com", "google.com", "careers.youtube.com"'
-   -- more columns could be added here to extract details about each company, but this is out of the scope of this test
-) ENGINE = MergeTree()
-ORDER BY (name)
-```
-
-### Examples
-
-For an input like this:
-| data\_provider\_origin\_id | data\_provider\_company\_id | name | domain | linkedin\_slug | host | url |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | 5f2987132c142600daf44da0 | Amazon Web Services \(AWS\) | null | amazon-web-services | null | null |
-| 3 | amazon-web-services | Amazon Web Services \(AWS\) | amazon.com | amazon-web-services | aws.amazon.com | http://aws.amazon.com |
-| 2 | 1a7417cbcd7e0e0d | American Airlines | aa.com | null | aa.com | http://jobs.aa.com |
-| 1 | 5da65de01eafc200013d00e0 | American Airlines | aa.com | american-airlines | aa.com | http://www.aa.com |
-| 3 | american-airlines | American Airlines | aa.com | american-airlines | aa.com | http://jobs.aa.com |
-
-
-Your process should be able to identify that those 5 records belong only to 2 different companies, AWS and American Airlines, and return the combinations of `data_provider_origin_id` and `data_provider_company_id` that belong to the same company, e.g. `[(1, "5f2987132c142600daf44da0"), (2, "1a7417cbcd7e0e0d"), (3, "american-airlines")]`.
-
-Producing a result like this:  
-
-| name | data_providers_and_company_ids | possible_names | possible_domains | linkedin_slug | possible_hostnames |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Amazon Web Services \(AWS\) | [(1, "5f2987132c142600daf44da0"), (3, "amazon-web-services")] | ["Amazon Web Services \(AWS\)"] | ["amazon.com"] | "amazon-web-services" | ["aws.amazon.com"] |
-| American Airlines | [(2, "1a7417cbcd7e0e0d"), (1, "5da65de01eafc200013d00e0"), (3, "american-airlines")] | ["American Airlines"] | ["aa.com"] | "american-airlines" | ["aa.com", "jobs.aa.com"] |
 
 ### A possible approach
 
@@ -136,23 +165,6 @@ A path that we see promising is dividing the problem into smaller steps, such as
 5. We can then merge the information from the intermediate tables into the final table.
 
 
-### About this test
-
-Don't invest more than 4-5 hours into this test. We're aware many things will be missing and can be improved, and even if you don't finish it, we'll value your thought process and how you think of next steps, handling edge cases, etc.
-
-This may look like a classic ML classification problem, but it's not because we don't have a pre-defined master list of companies - that has to be built from the data. And if more companies appear in the `company_landing` table, some of those will be new, so classifying them according to the set of companies we had before will fail to classify new companies correctly.
-
-It is **not** necessary to extract information from the `info` JSON column such as employee count, industry, etc. - that's out of the scope of this test. But you can also use it if you want more attributes to find common patterns between companies.
-
-Complete this README.md file explaining:
-- the approach you took
-- the assumptions you made
-- the trade-offs you made
-- the performance of the solution
-- the limitations of the solution
-- the alternatives you considered
-- how you used Cursor, Windsurf, Claude, ChatGPT or other AI tools to help you
-- the possible improvements you would make if you had more time
 
 ## FAQ
 
@@ -164,10 +176,11 @@ These are things that we will value positively in your solution:
    1. It's easy to build on the solution and extend it (using more fields to cluster companies by them, such as the logo for example)
    2. It's easy to maintain it - if we add new sources for companies, no or minimal changes have to be made
 2. Performance: 
-   1. Which datasets did you do this test with: 5k, 50k, or 500k records?
-   2. Have you tested your solution with the other records? How long did it take?
-   3. Does time scale linearly with the number of records? Or what is the time complexity of the solution?
-   4. Would your solution work with 10x more data? 100x more data? 1000x more data?
+   1. If more companies are added to the `company_landing` table, can the solution work incrementally to only process these new companies? Or does it need to be run on the whole dataset each time?
+   2. Which datasets did you do this test with: 5k, 50k, or 500k records? 
+   3. How long did it take to run the solution on each one of the datasets, if you tried more than one?
+   4. Does time scale linearly with the number of records? 
+   5. Would your solution work with 10x more data? 100x more data? 1000x more data?
 3. Reproducibility: 
    1. The solution is broken down into multiple steps, and each step is easy to understand and debug
    2. It's easy to test that each step does what it's supposed to do
